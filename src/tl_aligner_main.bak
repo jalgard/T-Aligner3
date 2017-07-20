@@ -1,0 +1,87 @@
+// by J@:)
+#include "dna_util.h"
+#include "tless.h"
+#include "indexref.h"
+#include "fastq_reader.h"
+#include "option_parser.h"
+#include "align_writer.h"
+#include "orf_finder.h"
+
+
+
+using namespace std;
+using namespace libdna;
+
+int main(int argc, char** argv)
+{
+    cerr << "Starting T-Aligner [map only] " << g_taligner_version << "\n";
+
+    TAlignerOptions Program_Options;
+    Parse_Arguments(argc, argv, Program_Options);
+
+
+    // Reference loading
+    vector<vector<string> > Reference_data;
+    vector<TlessDNA > Reference_Tless;
+    for(auto& ref_input : Program_Options.fasta_genes_files)
+        read_fasta(ref_input.c_str(), Reference_data);
+
+    for(auto& x : Reference_data)
+    {
+        auto tl = MakeTless(x[1]);
+        Reference_Tless.push_back(tl);
+    }
+
+    unordered_map<string, vector<Rindex> > Index;
+    Build_Fasta_Index(Reference_Tless, Index, Program_Options.align_seed_length);
+
+    ReadAlignmentTask AlignmentOptions;
+    AlignmentOptions.refIndex = &Index;
+    AlignmentOptions.seed = Program_Options.align_seed_length;
+    AlignmentOptions.seed_step = Program_Options.align_seed_step;
+    AlignmentOptions.mm = Program_Options.align_mm_max;
+    AlignmentOptions.max_long_indel_size = Program_Options.align_max_indel_size;
+    AlignmentOptions.align_rd_min = Program_Options.align_read_fraction_min;
+    AlignmentOptions.min_rd_length = Program_Options.align_read_length_min;
+    AlignmentOptions.Texts = &Reference_Tless;
+
+    cerr << "Mapping...\n";
+    vector<ReadAlignment> Alll =
+        Align_Reads_From_Fastq(Program_Options, 0, AlignmentOptions);
+
+    cerr << "Alignments done!\n\n";
+    //Do_Save_All_Reads_Alignment_FASTA((Program_Options.output_prefix+"_Alignment.fasta").c_str(),
+    //	Reference_Tless[0],
+    //	Alll);
+
+    ofstream mapped_part_fastq((Tokenize(Program_Options.fasta_genes_files[0], '/').back()
+                                +Tokenize(Program_Options.fastq_input_files[0],'/').back()+"_mapped.fastq").c_str());
+    int mapped_read_counter = 0;
+    for(int i = 0; i < Alll.size(); i++)
+    {
+        string nucs = PrintTless(Alll[i].read);
+        mapped_part_fastq << "@rd" << ++mapped_read_counter << "\n" <<
+        nucs << "\n+\n" << string(nucs.size(),'I') << "\n";
+    }
+    
+    cerr << "Mapped reads dumped.\n";
+    int mmmcount = 0;
+
+    vector<AlignedRow> matrix = Calculate_Alignment_Matrix(Alll,
+        Reference_Tless[0]);
+
+    int rd = 0;
+    for(auto& x : Alll)
+    {
+        if(Read_Alignment_Matches_Reference(
+           x, Reference_Tless))
+           {
+               mmmcount++;
+           }
+           rd++;
+    }
+
+
+    cout << Program_Options.fasta_genes_files[0] << "\t" << Program_Options.fastq_input_files[0] << "\t" << matrix.size() << "\t" << mmmcount << "\n";
+
+}
