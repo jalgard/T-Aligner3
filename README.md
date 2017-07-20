@@ -11,7 +11,10 @@ How to build
 You will need Qt library to build T-Aligner.
 Download and install Qt, make sure that qmake
 is in your environment's PATH.
-Download T-Aligner's code and do:\n
-qmake -project\n
-qmake\n
-make\n
+Download T-Aligner's code and do:
+
+qmake -project
+
+qmake
+
+make
