@@ -18,11 +18,6 @@ using namespace libdna;
 
 int main(int argc, char** argv)
 {
-    QDate dt = QDate::currentDate();
-    if(dt >= QDate(2018,8,8))
-    {
-        return 0;
-    }
     cout << "Starting T-Aligner " << g_taligner_version << "\n";
 
     TAlignerOptions Program_Options;
@@ -65,10 +60,16 @@ int main(int argc, char** argv)
     vector<ReadAlignment> Alll =
         Align_Reads_From_Fastq(Program_Options, 0, AlignmentOptions);
 
-    cout << "Alignment done!\n\n";
-    Do_Save_All_Reads_Alignment_FASTA((Program_Options.output_prefix+"_Alignment.fasta").c_str(),
-    	Reference_Tless[0],
-    	Alll);
+
+    // Align second fastq library
+    vector<ReadAlignment> ALib2;
+    if(Program_Options.mode_lib_compare)
+    {
+        ALib2 = Align_Reads_From_Fastq(Program_Options, 1, AlignmentOptions);
+    }
+    //cout << "Alignment done!\n\n";
+    //Do_Save_All_Reads_Alignment_FASTA((Program_Options.output_prefix+"_Alignment.fasta").c_str(),
+    //	Reference_Tless[0], Alll);
 
     if(Program_Options.dump_mapped_reads == true)
     {
@@ -87,7 +88,14 @@ int main(int argc, char** argv)
     vector<AlignedRow> matrix = Calculate_Alignment_Matrix(Alll,
         Reference_Tless[0]);
 
-        int rd = 0;
+    // alignment matrix for lib 2
+    vector<AlignedRow> matrix_lib2;
+    if(Program_Options.mode_lib_compare)
+    {
+        matrix_lib2 = Calculate_Alignment_Matrix(ALib2, Reference_Tless[0]);
+    }
+
+    int rd = 0;
     for(auto& x : Alll)
     {
         if(Read_Alignment_Matches_Reference(
@@ -99,8 +107,11 @@ int main(int argc, char** argv)
     }
 
 
-    cout << "Match ref " << mmmcount << endl;
-    cout << "Aligned " << matrix.size() << endl;
+    cout << "Match ref\t" << mmmcount << endl;
+    cout << "Aligned\t" << matrix.size() << endl;
+
+    return 0;
+    // EARLY EXIT
 
     QPointF upperleft_point(0,100);
 
@@ -129,7 +140,7 @@ int main(int argc, char** argv)
     SFP.frame_names.push_back("D, cloud coverage,\nORFs");
 
 
-    if(Program_Options.btlc_draw) {
+    if(Program_Options.btlc_draw || Program_Options.mode_lib_compare) {
         SFP.n_frames += 1;
         SFP.frame_heights.push_back(200);
         SFP.frame_names.push_back("E, selected ORFs");
@@ -164,6 +175,8 @@ int main(int argc, char** argv)
     cout << "After substring filter " << A2.size() << "\n";
 
     vector<MappedPart> MPN = A2; A2.clear();
+
+
 
     if(Program_Options.subsample_reads_fraction > 0)
     {
@@ -260,6 +273,32 @@ int main(int argc, char** argv)
         auto& main_orf = ORFs[Program_Options.main_orf_id];
         auto& main_orf_mp = DFS_results[main_orf.id];
 
+        /*
+            Calc revision stats
+        */
+        ofstream stat_file_es("Global_stats_AES_T-Aligner-rev.txt", std::ios_base::app);
+        map<int, int> es_counter_good; int es_counter_total = 0;
+        for(int i = 0; i < All.size(); i++)
+        {
+            int alt_states = Count_Alt_Edited_Sites(All[i], main_orf_mp, Reference_Tless[0]);
+            es_counter_total++;
+            for(int z = 1; z <= 20; z++)
+            {
+                if(alt_states >= z && alt_states <= 80)
+                {
+                    es_counter_good[z]++;
+                }
+            }
+        }
+        for(int z = 1; z <= 20; z++)
+        {
+            auto file_fa = Tokenize(Tokenize(Program_Options.fasta_genes_files[0], '/').back(), '.')[0];
+            auto file_fq = Tokenize(Tokenize(Program_Options.fastq_input_files[0], '/').back(), '.')[0];
+            stat_file_es << file_fa << "\t" << file_fq << "\t" << z << "\t" << es_counter_good[z] << "\t" << 100.0*es_counter_good[z]/es_counter_total << "\n";
+            cout << file_fa << "\t" << file_fq << "\t" << z << "\t" << es_counter_good[z] << "\t" << 100.0*es_counter_good[z]/es_counter_total << "\n";
+        }
+
+        //return 0;
         vector<int> main_orf_edits(tlref.T.size(), -1000);
         int mo_begin = main_orf_mp.rf_start + main_orf.start;
         int mo_end = main_orf_mp.rf_start + main_orf.end;
@@ -391,7 +430,21 @@ int main(int argc, char** argv)
         Draw_Frames(SFP);
 
         // always draw TP
-        Draw_TranslatabilityPlot2(matrix, goodORFs, Reference_Tless, 0, ADO_cloud);
+        if(Program_Options.mode_lib_compare)
+        {
+            ADO_cloud.mColor = QColor(140,140,140,25);
+            Draw_Cloudmatrix(matrix_lib2, Reference_Tless, 0, ADO_cloud);
+            /*
+            auto ADO_COMP = ADO_cloud;
+            ADO_COMP.Scene = Scene; ADO_COMP.UpperCorner += QPointF(0, 40.0);
+            floParam flp;
+            flp.M = DFS_results[main_orf.id];
+            flp.start_w_atg = Program_Options.start_with_ATG;
+            flp.is_complete = Program_Options.draw_orf_incomplete;
+            Draw_ORF(flp, Reference_Tless, 0, ADO_COMP);
+            */
+        }
+        else Draw_TranslatabilityPlot2(matrix, goodORFs, Reference_Tless, 0, ADO_cloud);
         /*
         if(Program_Options.draw_translatability_plot == true)
         {
@@ -477,6 +530,21 @@ int main(int argc, char** argv)
 
             Draw_ORF(flp, Reference_Tless, 0, ADO_BTLC);
         }
+
+        else if(Program_Options.mode_lib_compare)
+        {
+            ADO_orf.mColor = QColor(255, 0, 0, 255); // default color is RED
+            auto ADO_COMP = ADO_orf;
+            ADO_COMP.Scene = Scene; ADO_COMP.UpperCorner = SFP.GetFrameCenter(6) + QPointF(0, 40.0);
+            floParam flp;
+            flp.M = DFS_results[main_orf.id];
+            flp.start_w_atg = Program_Options.start_with_ATG;
+            flp.is_complete = Program_Options.draw_orf_incomplete;
+
+            Draw_ORFs_Compare_Libs(matrix, matrix_lib2, flp, Reference_Tless, 0, ADO_COMP, Program_Options);
+
+            Draw_ORF(flp, Reference_Tless, 0, ADO_COMP);
+        }
     }
     else
     {
@@ -493,6 +561,9 @@ int main(int argc, char** argv)
     ofstream coverhist_out((Program_Options.output_prefix+"_histogram.txt").c_str());
     for(auto& x : CoverageHist) coverhist_out << x.first << "\t" <<
         x.second[0] << "\t" << x.second[1] << "\t" << x.second[2] << "\t" << "\n";
+
+    // EARLY EXIT
+    //return 0;
 
     cout << "\nRendering scene to PNG\nPlease wait...\n\n";
     QImage jpeg_image(20000,20000, QImage::Format_ARGB32);

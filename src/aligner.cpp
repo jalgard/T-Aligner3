@@ -144,17 +144,17 @@ bool Read_Alignment_Matches_Reference(
     vector<TlessDNA>& Texts)
 {
         int unedited_positions = 0;
-        for(size_t i = 0; i< Alignment.rd_to - Alignment.rd_from; i++)
+        for(size_t i = 1; i < Alignment.rd_to - Alignment.rd_from; i++)
         {
-            if(Alignment.read.dT[Alignment.rd_from+i] ==
-                Texts[Alignment.ref].dT[Alignment.rf_start+i]) unedited_positions++;
+            if(Alignment.read.dT[Alignment.rd_from+i] !=
+                Texts[Alignment.ref].dT[Alignment.rf_start+i])
+                {
+                    return false;
+                }
         }
-        if(unedited_positions >= Alignment.rd_to - Alignment.rd_from)
-        {
-            Alignment.as_ref = true;
-            return true;
-        }
-        else return false;
+        Alignment.as_ref = true;
+        return true;
+
 }
 
 

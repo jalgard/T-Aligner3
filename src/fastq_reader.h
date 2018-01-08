@@ -31,6 +31,7 @@ vector<ReadAlignment> Do_Alignments_Chain(vector<ReadAlignmentTask> JobChain)
 }
 
 
+//
 vector<ReadAlignment> Align_Reads_From_Fastq(
     TAlignerOptions Opts, int lib_number,
     ReadAlignmentTask& AlignmentOptions

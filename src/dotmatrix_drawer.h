@@ -322,10 +322,12 @@ void Draw_ORF(floParam& ORF,
 	int u = 0;
 	for(; u < R.size(); u++)
 	{
+		if(R[u] > 17 || R[u] < -17) continue;
 		ORF_path.lineTo(x_axis_step*(u+0.5+ORF.M.rf_start+O.tlstart+1),
 			ADO.UpperCorner.y() /*+4.0*x_axis_step*/ + x_axis_step*(-1)*(R[u]+1.0));
 	}
 	u--;
+	if(R[u] > 17 || R[u] < -17) u--;
 	QGraphicsRectItem* ORFend = new QGraphicsRectItem(x_axis_step*(u+0.5+ORF.M.rf_start+O.tlstart+1)-3,
 		ADO.UpperCorner.y() /*+4.0*x_axis_step*/ + x_axis_step*(-1)*(R[u]+1.0)-3,6,6);
 	ORFend->setPen(MarkerPen);
@@ -796,6 +798,142 @@ void Draw_ORFs_BTLC(vector<AlignedRow>& matrix,
 }
 
 
+/*
+* Libs compare drawer
+*/
+
+void Draw_ORFs_Compare_Libs(vector<AlignedRow>& matrix,
+	vector<AlignedRow>& matrix2,
+	floParam& MainPath,
+	vector<TlessDNA>& Reference_base,
+	size_t Reference_id,
+	AbstractDrawOptions ADO,
+    TAlignerOptions Program_Options)
+{
+    auto& rtless = Reference_base[Reference_id];
+	map<int, vector<int> > sorted_alignments, sorted_alignments2;
+
+	for(size_t i = 0; i < matrix.size(); i++)
+		if(matrix[i].ref == Reference_id)
+			sorted_alignments[matrix[i].rf_start].push_back(i);
+
+	for(size_t i = 0; i < matrix2.size(); i++)
+		if(matrix2[i].ref == Reference_id)
+			sorted_alignments2[matrix2[i].rf_start].push_back(i);
+
+	map<int, map<int, int> > Editing_Matrix, Editing_Matrix2;
+	map<int, int> Editing_Matrix_CC, Editing_Matrix_CC2;
+	for(size_t i = 0; i < rtless.T.size(); i++)
+		if(sorted_alignments.count(i))
+			for(auto& id : sorted_alignments[i]) {
+				auto& alignment = matrix[id];
+				for(size_t p = 0; p < alignment.r.size(); p++)
+				{
+					Editing_Matrix[alignment.r[p]][i+p]++;
+					Editing_Matrix_CC[i+p]++;
+				}
+
+			}
+	for(size_t i = 0; i < rtless.T.size(); i++)
+		if(sorted_alignments2.count(i))
+			for(auto& id : sorted_alignments2[i]) {
+				auto& alignment = matrix2[id];
+				for(size_t p = 0; p < alignment.r.size(); p++)
+				{
+					Editing_Matrix2[alignment.r[p]][i+p]++;
+					Editing_Matrix_CC2[i+p]++;
+				}
+			}
+
+	map<int, map<int, int> > MainXY;
+	taORF CDS = Find_Longest_ORF(MainPath);
+	int MainXS = MainPath.M.rf_start + CDS.tlstart;
+	int MainXE = MainXS + CDS.tlend-CDS.tlstart;
+	for(int i = 0; i < MainPath.M.mp.dT.size(); i++)
+	{
+		MainXY[MainPath.M.rf_start+i][MainPath.M.mp.dT[i+1] - rtless.dT[MainPath.M.rf_start+i+1]] = 1;
+	}
+
+	int counter_dots_diff_red = 0;
+	int counter_dots_diff_blue = 0;
+	int counter_dots_diff_red_ref = 0;
+	int counter_dots_diff_blue_ref = 0;
+	int counter_dots_diff_red_main = 0;
+	int counter_dots_diff_blue_main = 0;
+	int counter_dots_diff_red_alt = 0;
+	int counter_dots_diff_blue_alt = 0;
+
+
+	map<int, map<int, QColor> > Actual_dot_alpha;
+	double norm_coeff = 1.0 * matrix.size() / matrix2.size();
+
+	for(int i = 0; i < rtless.T.size(); i++)
+		for(int k = -max_indel_l; k <= max_indel_l; k++)
+        {
+			double dist = (1.0*Editing_Matrix[k][i]) / (norm_coeff*Editing_Matrix2[k][i]);
+			//double dist = (1.0*Editing_Matrix[k][i]/Editing_Matrix_CC[i]) / (1.0*Editing_Matrix2[k][i]/Editing_Matrix_CC2[i]);
+			if(Editing_Matrix[k][i] <= 4 || Editing_Matrix2[k][i] <= 4) dist = 1.0;
+			if(dist < 3.0000 && dist > 0.3333)
+				Actual_dot_alpha[k][i] = QColor(95, 105, 105);
+			else if(dist >= 3.0000)
+			{
+				Actual_dot_alpha[k][i] = QColor(255, 0, 15, 100);
+				if(i >= MainXS && i <= MainXE)
+				{
+					counter_dots_diff_red++;
+					if(MainXY[i][k] == 1 && k != 0)
+						counter_dots_diff_red_main++;
+					else if(k == 0 && MainXY[i][k] != 1)
+						counter_dots_diff_red_ref++;
+					else if(k == 0 && MainXY[i][k] == 1) {}
+					else counter_dots_diff_red_alt++;
+				}
+			}
+			else if(dist <= 0.3333)
+			{
+				Actual_dot_alpha[k][i] = QColor(0, 15, 255, 100);
+				if(i >= MainXS && i <= MainXE)
+				{
+					counter_dots_diff_blue++;
+					if(MainXY[i][k] == 1 && k != 0)
+						counter_dots_diff_blue_main++;
+					else if(k == 0 && MainXY[i][k] != 1)
+						counter_dots_diff_blue_ref++;
+					else if(k == 0 && MainXY[i][k] == 1) {}
+					else counter_dots_diff_blue_alt++;
+				}
+			}
+		}
+
+	cout << "\n--- Compare stats ---\n\tRed:\n\t\tAll\t" <<
+		counter_dots_diff_red << "\n\t\tRef\t" << counter_dots_diff_red_ref << "\n\t\tMain\t" <<
+		counter_dots_diff_red_main << "\n\t\tAlt\t" << counter_dots_diff_red_alt << "\n\tBlue:\n\t\tAll\t" <<
+		counter_dots_diff_blue << "\n\t\tRef\t" << counter_dots_diff_blue_ref << "\n\t\tMain\t" <<
+		counter_dots_diff_blue_main << "\n\t\tAlt\t" << counter_dots_diff_blue_alt << "\n\n";
+
+    // Draw matrix cycle
+    double pos_x = 0;
+    for(int i = 0; i < rtless.T.size(); i++)
+    {
+        pos_x += x_axis_step;
+        for(int k = -max_indel_l; k <= max_indel_l; k++)
+        {
+            int cell_rd_count = Editing_Matrix[k][i];
+            if(cell_rd_count >= draw_dot_rdsupp_min)
+            {
+				QGraphicsEllipseItem* MatrixDot = new QGraphicsEllipseItem(
+					pos_x + 1.0,
+					ADO.UpperCorner.y() + x_axis_step*(-1)*k - 1.5*x_axis_step + 1.0, // - 2.0,
+					6.0, 6.0);
+				MatrixDot->setPen(QPen(Actual_dot_alpha[k][i]));
+				MatrixDot->setBrush(QBrush(Actual_dot_alpha[k][i]));
+				ADO.Scene->addItem(MatrixDot);
+            }
+        }
+    }
+}
+
+
 
 vector<int> Recalc_Support(MappedPart& ORF,
     vector<MappedPart>& Alignments, int& supp_total, int& supp_edited)
@@ -1131,6 +1269,46 @@ int Get_Total_ES_dist_mRNA(MappedPart& MP, MappedPart& XX,
 	ess_supp = xx_min;
 	return ESD;
 }
+
+
+
+
+
+
+int Count_Alt_Edited_Sites(MappedPart& XX, MappedPart& MP, TlessDNA& RF)
+{
+	int xx_dt_shift, mp_dt_shift, rf_alignment_start;
+
+	if(MP.rf_start >= XX.rf_start)
+	{
+		if(XX.rf_start+XX.mp.dT.size()-1 < MP.rf_start) return 0;
+		rf_alignment_start = MP.rf_start;
+		mp_dt_shift = 0;
+		xx_dt_shift = rf_alignment_start - XX.rf_start;
+	}
+	else
+	{
+		if(MP.rf_start+MP.mp.dT.size()-1 < XX.rf_start) return 0;
+		rf_alignment_start = XX.rf_start;
+		xx_dt_shift = 0;
+		mp_dt_shift = rf_alignment_start - MP.rf_start;
+	}
+
+	int ESD = 0;
+	for(int i = 0; i < XX.mp.dT.size() - xx_dt_shift - 2 && i < MP.mp.dT.size() - mp_dt_shift - 2; i++)
+	{
+		if(XX.mp.dT[xx_dt_shift+i+1] != MP.mp.dT[mp_dt_shift+i+1])
+		{
+			ESD++;
+			if(XX.mp.dT[xx_dt_shift+i+1]-RF.dT[XX.rf_start+xx_dt_shift+i+1] == 0)
+			{
+				ESD--;
+			}
+		}
+	}
+	return ESD;
+}
+
 
 
 #endif

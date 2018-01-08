@@ -11,7 +11,7 @@ using namespace libdna;
 
 // defaults
 
-const char* g_taligner_version = "v.3.0.1";
+const char* g_taligner_version = "v.3.1.rev";
 const string default_output_prefix = "TA3_output_";
 const int default_num_threads = 10;
 
@@ -66,6 +66,9 @@ struct TAlignerOptions
     int btlc_pos;
     int btlc_k;
     int btlc_count;
+
+    bool mode_lib_compare;
+
 };
 
 void Parse_Arguments(int argc, char** argv, TAlignerOptions& options)
@@ -101,6 +104,7 @@ void Parse_Arguments(int argc, char** argv, TAlignerOptions& options)
     options.btlc_pos=0;
     options.btlc_k=0;
     options.btlc_count=0;
+    options.mode_lib_compare=false;
 
 
     /*
@@ -269,6 +273,11 @@ void Parse_Arguments(int argc, char** argv, TAlignerOptions& options)
             options.btlc_count = atoi(params[2].c_str());
             options.btlc_draw = true;
             arg_num++;
+        }
+
+        else if(string(argv[arg_num]) == "--compare")
+        {
+            options.mode_lib_compare=true;
         }
 
     }
