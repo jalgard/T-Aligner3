@@ -19,7 +19,7 @@ using namespace libdna;
 int main(int argc, char** argv)
 {
     QDate dt = QDate::currentDate();
-    if(dt >= QDate(2017,8,8))
+    if(dt >= QDate(2018,8,8))
     {
         return 0;
     }
