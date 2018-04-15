@@ -327,7 +327,7 @@ void Draw_ORF(floParam& ORF,
 			ADO.UpperCorner.y() /*+4.0*x_axis_step*/ + x_axis_step*(-1)*(R[u]+1.0));
 	}
 	u--;
-	if(R[u] > 17 || R[u] < -17) u--;
+	while(R[u] > 17 || R[u] < -17) u--;
 	QGraphicsRectItem* ORFend = new QGraphicsRectItem(x_axis_step*(u+0.5+ORF.M.rf_start+O.tlstart+1)-3,
 		ADO.UpperCorner.y() /*+4.0*x_axis_step*/ + x_axis_step*(-1)*(R[u]+1.0)-3,6,6);
 	ORFend->setPen(MarkerPen);
@@ -372,6 +372,7 @@ void Draw_Cloudmatrix(vector<AlignedRow>& matrix,
 		for(size_t i = 0; i < align.r.size(); i++)
 		{
 
+            if(align.r[i] > 20 || align.r[i] < -20) continue;
 			double tX = 1.0*x_axis_step*static_cast<double>(align.rf_start+i+1.5) +
 			R(rand_gen)*qCos(Psi(rand_gen));
 
@@ -415,6 +416,7 @@ void Draw_Cloudmatrix_v2(vector<AlignedRow>& matrix,
 	AbstractDrawOptions ADO
 )
 {
+
     auto& rtless = Reference_base[Reference_id];
 	// draw axis
 
@@ -507,6 +509,7 @@ void Draw_TranslatabilityPlot2(vector<AlignedRow>& matrix,
 	size_t Reference_id,
 	AbstractDrawOptions ADO)
 {
+
     auto& rtless = Reference_base[Reference_id];
 
 	map<int, vector<int> > sorted_alignments;
@@ -521,20 +524,7 @@ void Draw_TranslatabilityPlot2(vector<AlignedRow>& matrix,
 	}
 
 	map<int, vector<vector<int> > > sorted_translations;
-    /*
-	for(size_t i = 0; i < translations.size(); i++)
-	{
-		auto& tr = translations[i];
-		vector<int> r;
-		for(int j = 0; j < (tr.mp.dT.size()-1) &&
-		tr.rf_start+j+1 < rtless.dT.size(); j++)
-		{
-			r.push_back(tr.mp.dT[j+1] - rtless.dT[tr.rf_start+j+1]);
-		}
-		if(r.size() > 5)
-			sorted_translations[tr.rf_start].push_back(r);
-	}
-	*/
+
     for(size_t i = 0; i < translations.size(); i++)
 	{
         floParam flp;
@@ -606,12 +596,7 @@ void Draw_TranslatabilityPlot2(vector<AlignedRow>& matrix,
 
 			if(Translated_Matrix[k][i] > 0)
 			{
-				/*
-                QGraphicsEllipseItem* MatrixDotE = new QGraphicsEllipseItem(
-					pos_x+3.0,
-					ADO.UpperCorner.y() + x_axis_step*(-1)*k - 1.5*x_axis_step, // - 3.0,
-					8.0, 8.0);
-				*/
+
                 QGraphicsRectItem* MatrixDotE = new QGraphicsRectItem(
 					pos_x-1.0,
 					ADO.UpperCorner.y() + x_axis_step*(-1)*k - 1.5*x_axis_step-1.0, // - 3.0,
@@ -1021,6 +1006,7 @@ void Draw_Alternatively_Edited_Sites(
 	size_t Reference_id,
 	AbstractDrawOptions ADO)
 {
+
 	floParam flp1;
 	flp1.M = MP;
 	flp1.start_w_atg = false;
@@ -1073,11 +1059,12 @@ void Draw_Alternatively_Edited_Sites(
 
 
 int Get_Total_ES_dist(MappedPart& MP, MappedPart& XX,
+    taORF& OMP, taORF& OXX,
 	vector<TlessDNA>& Reference_base, size_t Reference_id,
 	vector<MappedPart>& Alignments, double& ess_ratio, int& ess_supp)
 {
 
-
+    /*
 	floParam flp1;
 	flp1.M = MP;
 	flp1.start_w_atg = false;
@@ -1088,7 +1075,7 @@ int Get_Total_ES_dist(MappedPart& MP, MappedPart& XX,
 	flp2.start_w_atg = false;
 	flp2.is_complete = true;
 	auto OXX = Find_Longest_ORF(flp2);
-
+    */
 	int xx_orf_rf_start = OXX.tlstart + XX.rf_start;
 	int mp_orf_rf_start = OMP.tlstart + MP.rf_start;
 	int xx_dt_shift, mp_dt_shift, rf_alignment_start;

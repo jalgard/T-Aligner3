@@ -8,6 +8,7 @@
 #include "dotmatrix_drawer.h"
 #include "frames_drawer.h"
 #include "orf_finder.h"
+#include "editing_stats.h"
 
 #include <QtGui>
 //#include <QSvgGenerator>
@@ -34,7 +35,7 @@ int main(int argc, char** argv)
 
     // Reference loading
     vector<vector<string> > Reference_data;
-    vector<TlessDNA > Reference_Tless;
+    vector<TlessDNA> Reference_Tless;
     for(auto& ref_input : Program_Options.fasta_genes_files)
         read_fasta(ref_input.c_str(), Reference_data);
 
@@ -110,7 +111,37 @@ int main(int argc, char** argv)
     cout << "Match ref\t" << mmmcount << endl;
     cout << "Aligned\t" << matrix.size() << endl;
 
-    return 0;
+
+    map<int, int> editingSitePyramid;
+    map<int, int> editingDistPyramid;
+    map<string, int> statsOut;
+    Calculate_Editing_Pyramid(matrix,
+      editingSitePyramid,
+      editingDistPyramid,
+      statsOut, 80);
+
+    cout << "\nEditing per site pyramid:\n";
+    for(auto& x : editingSitePyramid)
+    {
+        cout << x.first << "\t" << x.second << "\n";
+    }
+    cout << "\nEditing per distance pyramid:\n";
+    for(auto& x : editingDistPyramid)
+    {
+        cout << x.first << "\t" << x.second << "\n";
+    }
+
+
+    map<int, int> editedSegments;
+    Find_New_Cryptogenes(matrix, editedSegments);
+
+    cout << "\nPossible edited segments:\n";
+    for(auto& x : editedSegments)
+    {
+        cout << x.first << "\t" << x.second << "\n";
+    }
+
+    //return 0;
     // EARLY EXIT
 
     QPointF upperleft_point(0,100);
@@ -128,11 +159,12 @@ int main(int argc, char** argv)
 
 
     /*
-    A, editing states
-    B, coverage, editing rate
-    C, translatable editing states, ORFs
-    D, cloud coverage, ORFs
+        A, editing states
+        B, coverage, editing rate
+        C, translatable editing states, ORFs
+        D, cloud coverage, ORFs
     */
+
     SFP.frame_names.push_back("A, editing states");
     SFP.frame_names.push_back("B, coverage,\n% edited reads");
     SFP.frame_names.push_back("C, translatable\nediting states, ORFs");
@@ -202,9 +234,43 @@ int main(int argc, char** argv)
     cout << "Done!\nStarting assembly...\n";
 
     vector<MappedPart> DFS_results;
-    for(auto& s : starts)
-        DFS_results.push_back(BFS_For_LongestORF(
-            s, MPN, OG, starts, stops, 10, Program_Options.start_with_ATG));
+
+    vector<vector<int> > startsPerThread;
+    int ncpu = Program_Options.num_threads;
+    int jobPerThread = starts.size() / ncpu;
+    vector<future<vector<MappedPart> > > threadDFSresults;
+    int currentSt = 0;
+    for(int i = 0; i < ncpu; i++)
+    {
+        vector<int> temp;
+        for(; currentSt < (i + 1) * starts.size() / ncpu; ++currentSt)
+            temp.push_back(starts[currentSt]);
+        startsPerThread.push_back(temp);
+    }
+    for(; currentSt < starts.size(); ++currentSt)
+        startsPerThread[ncpu-1].push_back(starts[currentSt]);
+
+    for(int i = 0; i < ncpu; i++)
+    threadDFSresults.push_back(async(launch::async,
+        [&](vector<int> inputS) -> vector<MappedPart>
+        {
+            vector<MappedPart> temp;
+            for(auto& s : inputS)
+            temp.push_back(BFS_For_LongestORF(
+            s, MPN, OG, starts, stops, 10,
+            Program_Options.start_with_ATG));
+            return temp;
+        }, startsPerThread[i]));
+
+    for(auto& job : threadDFSresults)
+    {
+        auto result = job.get();
+        DFS_results.insert(DFS_results.end(), result.begin(), result.end());
+    }
+
+    //for(auto& s : starts)
+    //    DFS_results.push_back(BFS_For_LongestORF(
+    //        s, MPN, OG, starts, stops, 10, Program_Options.start_with_ATG));
 
 
     struct Orfhit
@@ -222,12 +288,20 @@ int main(int argc, char** argv)
         int mrna_total_edit_dist_2_main;
         int mrna_es_supp;
         double mrna_es_ratio;
+        taORF lORF;
     };
     vector<Orfhit> ORFs;
 
     cout << "ORF assembly loop (using DFS)\n";
 
     unordered_map<int, int> edited_support_DFS;
+
+    // unique orf finding
+    unordered_map<int, unordered_map<int, unordered_map<int, string> > > orfCollapser;
+    for(int i = 0; i < Reference_Tless[0].T.size(); i++)
+        for(int j = 0; j < Reference_Tless[0].T.size(); j++)
+            orfCollapser[i][j][0] = "";
+
     for(size_t i = 0; i < DFS_results.size(); i++)
     {
         if(DFS_results[i].supp > 1)
@@ -239,16 +313,24 @@ int main(int argc, char** argv)
             flp.is_complete = Program_Options.draw_orf_incomplete;
             taORF orf_ = Find_Longest_ORF(flp);
             int total_supp, edited_supp;
-            DFS_results[i].supp = Recalc_Support(flp.M, All, total_supp, edited_supp).size();
+
 
             edited_support_DFS[i] = edited_supp;
 
             o.start = orf_.tlstart;
             o.end = orf_.tlend;
             o.aa = TranslateORF(orf_.orf);
+
+            if(orfCollapser[o.start][o.end].find(o.aa.size()) != orfCollapser[o.start][o.end].end() &&
+                orfCollapser[o.start][o.end][o.aa.size()] == o.aa) continue;
+            else orfCollapser[o.start][o.end][o.aa.size()] = o.aa;
+
             o.nuc = orf_.orf;
-            o.supp = DFS_results[i].supp;
             o.id = i;
+            o.lORF = orf_;
+
+            DFS_results[i].supp = Recalc_Support(flp.M, All, total_supp, edited_supp).size();
+            o.supp = DFS_results[i].supp;
 
             if(Program_Options.orf_length_min > 0 &&
                 o.nuc.size() < Program_Options.orf_length_min) continue;
@@ -272,6 +354,7 @@ int main(int argc, char** argv)
 
         auto& main_orf = ORFs[Program_Options.main_orf_id];
         auto& main_orf_mp = DFS_results[main_orf.id];
+        auto& main_orf_lorf = main_orf.lORF;
 
         /*
             Calc revision stats
@@ -309,13 +392,95 @@ int main(int argc, char** argv)
                 main_orf_mp.mp.dT[i] - tlref.dT[main_orf_mp.rf_start+i];
         }
 
+        vector<int> mrna_main_orf_edits(tlref.T.size(), -1000);
+
+        for(int i = 1; i < main_orf_mp.mp.dT.size()-1; i++)
+        {
+            mrna_main_orf_edits[main_orf_mp.rf_start+i] =
+                main_orf_mp.mp.dT[i] - tlref.dT[main_orf_mp.rf_start+i];
+        }
+
+
+        vector<vector<int> > orfsPerThread;
+        int jobPerThread = ORFs.size() / ncpu;
+        currentSt = 0;
+        for(int i = 0; i < ncpu; i++)
+        {
+            vector<int> temp;
+            for(; currentSt < (i + 1) * ORFs.size() / ncpu; ++currentSt)
+                temp.push_back(currentSt);
+            orfsPerThread.push_back(temp);
+        }
+        for(; currentSt < ORFs.size(); ++currentSt)
+            orfsPerThread[ncpu-1].push_back(currentSt);
+
+        vector<future<void> > ORFprocessingResults;
+        for(int NCPU = 0; NCPU < ncpu; NCPU++)
+            ORFprocessingResults.push_back(async(launch::async,
+            [&](vector<int> inputS) -> void
+            {
+            for(int K = 0; K < inputS.size(); K++)
+            {
+                int i = inputS[K];
+                auto& corf = ORFs[i];
+                auto& corfmp = DFS_results[corf.id];
+
+                ORFs[i].total_edit_dist_2_main = Get_Total_ES_dist(main_orf_mp, corfmp,
+                    main_orf_lorf, ORFs[i].lORF, Reference_Tless, 0, All, ORFs[i].es_ratio, ORFs[i].es_supp);
+
+                ORFs[i].mrna_total_edit_dist_2_main = Get_Total_ES_dist_mRNA(main_orf_mp, corfmp,
+                    Reference_Tless, 0, All, ORFs[i].mrna_es_ratio, ORFs[i].mrna_es_supp);
+
+                int edit_dist = 0;
+                vector<int> current_orf_edits(tlref.T.size(), -1000);
+                for(int j = corf.start; j < corf.end; j++)
+                {
+                    current_orf_edits[corfmp.rf_start+j+1] =
+                        corfmp.mp.dT[j+1] - tlref.dT[corfmp.rf_start+j+1];
+                    if(corfmp.rf_start+j < mo_begin || corfmp.rf_start+j >= mo_end)
+                        current_orf_edits[corfmp.rf_start+j+1] = 0;
+                }
+                for(int j = 0; j < current_orf_edits.size(); j++)
+                {
+                    if(current_orf_edits[j] == 0 ||
+                        main_orf_edits[j]==-1000 || current_orf_edits[j]==-1000) continue;
+                    if(current_orf_edits[j] != main_orf_edits[j]) edit_dist++;
+                }
+                ORFs[i].edit_dist_2_main = edit_dist;
+
+                // and same for mRNA
+
+                int mrna_edit_dist = 0;
+                vector<int> mrna_current_orf_edits(tlref.T.size(), -1000);
+                for(int j = 1; j < corfmp.mp.dT.size()-1; j++)
+                {
+                    mrna_current_orf_edits[corfmp.rf_start+j+1] =
+                        corfmp.mp.dT[j+1] - tlref.dT[corfmp.rf_start+j+1];
+                    // no need to check anything out of mRNA's bounds
+                }
+                for(int j = 0; j < current_orf_edits.size(); j++)
+                {
+                    if(current_orf_edits[j] == 0 ||
+                        mrna_main_orf_edits[j]==-1000 || mrna_current_orf_edits[j]==-1000) continue;
+                    if(mrna_current_orf_edits[j] != mrna_main_orf_edits[j]) mrna_edit_dist++;
+                }
+                ORFs[i].mrna_edit_dist_2_main = mrna_edit_dist;
+            }
+            }, orfsPerThread[NCPU]));
+
+        for(auto& job : ORFprocessingResults)
+        {
+            job.get();
+        }
+
+        /*
         for(int i = 0; i < ORFs.size(); i++)
         {
             auto& corf = ORFs[i];
             auto& corfmp = DFS_results[corf.id];
 
             ORFs[i].total_edit_dist_2_main = Get_Total_ES_dist(main_orf_mp, corfmp,
-                Reference_Tless, 0, All, ORFs[i].es_ratio, ORFs[i].es_supp);
+                main_orf_lorf, ORFs[i].lORF, Reference_Tless, 0, All, ORFs[i].es_ratio, ORFs[i].es_supp);
 
             ORFs[i].mrna_total_edit_dist_2_main = Get_Total_ES_dist_mRNA(main_orf_mp, corfmp,
                 Reference_Tless, 0, All, ORFs[i].mrna_es_ratio, ORFs[i].mrna_es_supp);
@@ -338,13 +503,7 @@ int main(int argc, char** argv)
             ORFs[i].edit_dist_2_main = edit_dist;
 
             // and same for mRNA
-            vector<int> mrna_main_orf_edits(tlref.T.size(), -1000);
 
-            for(int i = 1; i < main_orf_mp.mp.dT.size()-1; i++)
-            {
-                main_orf_edits[main_orf_mp.rf_start+i] =
-                    main_orf_mp.mp.dT[i] - tlref.dT[main_orf_mp.rf_start+i];
-            }
             int mrna_edit_dist = 0;
             vector<int> mrna_current_orf_edits(tlref.T.size(), -1000);
             for(int j = 1; j < corfmp.mp.dT.size()-1; j++)
@@ -356,12 +515,12 @@ int main(int argc, char** argv)
             for(int j = 0; j < current_orf_edits.size(); j++)
             {
                 if(current_orf_edits[j] == 0 ||
-                    main_orf_edits[j]==-1000 || mrna_current_orf_edits[j]==-1000) continue;
-                if(mrna_current_orf_edits[j] != main_orf_edits[j]) mrna_edit_dist++;
+                    mrna_main_orf_edits[j]==-1000 || mrna_current_orf_edits[j]==-1000) continue;
+                if(mrna_current_orf_edits[j] != mrna_main_orf_edits[j]) mrna_edit_dist++;
             }
             ORFs[i].mrna_edit_dist_2_main = mrna_edit_dist;
         }
-
+        */
 
         int coverage_frame_height = 0;
         vector<MappedPart> goodORFs;
@@ -565,6 +724,7 @@ int main(int argc, char** argv)
     // EARLY EXIT
     //return 0;
 
+    //Scene->setSceneRect(0,0, Reference_Tless[0].T.size()*7+300, 7*60*7);
     cout << "\nRendering scene to PNG\nPlease wait...\n\n";
     QImage jpeg_image(20000,20000, QImage::Format_ARGB32);
     QPainter jpeg_painter(&jpeg_image);
@@ -574,6 +734,7 @@ int main(int argc, char** argv)
     //jpeg_image.save((Program_Options.output_prefix+"_Image.tiff").c_str(), "TIFF");
     //jpeg_image.save((Program_Options.output_prefix+"_Image.jpg").c_str(), "JPG");
 
+    //MappedReadsScene->setSceneRect(0,0, Reference_Tless[0].T.size()*7+300, 7*60*7);
     QImage jpeg_image_cover(20000,20000, QImage::Format_ARGB32);
     QPainter jpeg_painter_cover(&jpeg_image_cover);
     MappedReadsScene->render(&jpeg_painter_cover);

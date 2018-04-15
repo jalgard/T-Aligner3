@@ -236,7 +236,7 @@ vector<int> Select_Reads_With_Start_Codon(
     for(int n = 0; n < MPN.size(); n++)
     {
         if(offset > 0 && MPN[n].rf_start > offset) continue;
-        else if(MPN[n].rf_start > Reference.T.size()/2) continue;
+        else if(MPN[n].rf_start > Reference.T.size() / 3) continue;
         string read = PrintTless(MPN[n].mp);
         for(int f = 0; f < 3; f++)
         {
@@ -244,8 +244,9 @@ vector<int> Select_Reads_With_Start_Codon(
             for(int i = 0; i < read.size()-6; i += 3)
             {
                 string codon = read.substr(f+i, 3);
-                if(codon == "ATG" || (codon == "ATA" && !start_w_atg)) has_start = true;
-                if(codon == "TAG" || codon == "TAA") has_start = false;
+                if(codon == "ATG" || ((codon == "TTG" || codon == "GTG" || codon == "ATT" || codon == "ATA")
+                    && !start_w_atg)) has_start = true; 
+                if(codon == "TAG" || codon == "TAA") { has_start = false; break; }
             }
             if(has_start) with_start_nodes.insert(n);
         }
@@ -266,7 +267,7 @@ vector<int> Select_Reads_With_Stop_Codon(
     for(int n = 0; n < MPN.size(); n++)
     {
         if(offset > 0 && MPN[n].rf_start < Reference.T.size()-offset) continue;
-        else if(MPN[n].rf_start < Reference.T.size()/2) continue;
+        else if(MPN[n].rf_start < Reference.T.size() / 3) continue;
         string read = PrintTless(MPN[n].mp);
         for(int f = 0; f < 3; f++)
         {
@@ -274,7 +275,7 @@ vector<int> Select_Reads_With_Stop_Codon(
             for(int i = 0; i < read.size()-6; i += 3)
             {
                 string codon = read.substr(f+i, 3);
-                if(codon == "TAG" || codon == "TAA") has_stop = true;
+                if(codon == "TAG" || codon == "TAA") { has_stop = true; break; }
             }
             if(has_stop) with_stop_nodes.insert(n);
         }
@@ -296,7 +297,8 @@ static string Find_Longest_ORF(MappedPart& M, bool start_w_atg=false)
         for(int i = 0; i < dnaseq.size() - 6; i += 3)
         {
             string codon = dnaseq.substr(f+i, 3);
-            if(codon == "ATG" || (codon == "ATA" && !start_w_atg) ) {
+            if(codon == "ATG" || ((codon == "TTG" || codon == "GTG" || codon == "ATT" || codon == "ATA")
+                    && !start_w_atg)) {
                 if(cstart == 0)
                     cstart = f+i;
             }
@@ -331,7 +333,8 @@ static string Find_Longest_ORF_Complete(MappedPart& M, bool start_w_atg=false)
         for(int i = 0; i < dnaseq.size() - 6; i += 3)
         {
             string codon = dnaseq.substr(f+i, 3);
-            if(codon == "ATG" || (codon == "ATA" && !start_w_atg)) {
+            if(codon == "ATG" || ((codon == "TTG" || codon == "GTG" || codon == "ATT" || codon == "ATA")
+                    && !start_w_atg)) {
                 if(cstart == 0)
                     cstart = f+i;
             }
@@ -376,7 +379,8 @@ static taORF Find_Longest_ORF(floParam flp)
         for(int i = 0; i < dnaseq.size() - 6; i += 3)
         {
             string codon = dnaseq.substr(f+i, 3);
-            if(codon == "ATG" || (codon == "ATA" && flp.start_w_atg==false)) {
+            if(codon == "ATG" || ((codon == "TTG" || codon == "GTG" || codon == "ATT" || codon == "ATA")
+                    && flp.start_w_atg==false)) {
                 if(cstart == 0)
                     cstart = f+i;
             }
@@ -393,7 +397,7 @@ static taORF Find_Longest_ORF(floParam flp)
         if(flp.is_complete==false && cstart > 0 && cend == 0 &&
             (dnaseq.size() - cstart) > (lend - lstart))
         {
-            lend = dnaseq.size(); lstart = cstart; // mode may2017: "lend = dnaseq.size()-1" influenced ORF order
+            lend = dnaseq.size()-1; lstart = cstart; // mode may2017: "lend = dnaseq.size()-1" influenced ORF order
         }
     }
 

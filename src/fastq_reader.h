@@ -7,7 +7,7 @@
 #include "aligner.h"
 #include "option_parser.h"
 
-void Parse_One_Alignment(
+inline void Parse_One_Alignment(
     vector<ReadAlignment>& Alignments,
     ReadAlignmentTask Task)
 {
@@ -20,7 +20,7 @@ void Parse_One_Alignment(
         Alignments.push_back(finalAlignments[0]);
 }
 
-vector<ReadAlignment> Do_Alignments_Chain(vector<ReadAlignmentTask> JobChain)
+inline vector<ReadAlignment> Do_Alignments_Chain(vector<ReadAlignmentTask> JobChain)
 {
     vector<ReadAlignment> Alignments;
     for(size_t i = 0; i < JobChain.size(); i++)
@@ -34,8 +34,7 @@ vector<ReadAlignment> Do_Alignments_Chain(vector<ReadAlignmentTask> JobChain)
 //
 vector<ReadAlignment> Align_Reads_From_Fastq(
     TAlignerOptions Opts, int lib_number,
-    ReadAlignmentTask& AlignmentOptions
-)
+    ReadAlignmentTask& AlignmentOptions)
 {
 
     string l1,l2,l3,l4;
@@ -58,19 +57,19 @@ vector<ReadAlignment> Align_Reads_From_Fastq(
 
         // at least num_threads reads we have - do fow/rev alignment
         vector<future<vector<ReadAlignment> > > align_results;
-        for(int rd = 0; rd < reads_read.size(); rd+=Opts.job_size)
+        for(int rd = 0; rd < reads_read.size(); rd += Opts.job_size)
         {
             vector<ReadAlignmentTask> CurrentBatchJob;
             for(int j = 0; j < Opts.job_size; j++)
             {
-                if(rd+j >= reads_read.size()) break;
+                if(rd + j >= reads_read.size()) break;
                 ReadAlignmentTask Task_fow = AlignmentOptions;
                 Task_fow.read = MakeTless(reads_read[rd+j]);
-                if(Task_fow.read.T.size() > Opts.align_seed_length*2)
+                if(Task_fow.read.T.size() > Opts.align_seed_length * 3)
                     CurrentBatchJob.push_back(Task_fow);
                 ReadAlignmentTask Task_rev = Task_fow;
                 Task_rev.read = MakeTless(rcDNA(reads_read[rd+j]));
-                if(Task_rev.read.T.size() > Opts.align_seed_length*2)
+                if(Task_rev.read.T.size() > Opts.align_seed_length * 3)
                     CurrentBatchJob.push_back(Task_rev);
 
             }

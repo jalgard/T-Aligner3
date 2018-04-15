@@ -7,7 +7,11 @@ vector<Subalignment> Do_Align_Read(ReadAlignmentTask T)
 {
     vector<Subalignment> Alignments;
 
-    for(size_t pos = 0; pos < T.read.T.size() - 2*T.seed; pos += T.seed_step)
+    // Critial modification!
+    // was
+    //for(size_t pos = 0; pos < T.read.T.size() - 2*T.seed; pos += T.seed_step)
+    size_t SeedsPerRead = static_cast<size_t>(T.seed * (static_cast<int>(T.read.T.size()) / T.seed));
+    for(size_t pos = 0; pos < SeedsPerRead - T.seed; pos += T.seed_step)
     {
         auto hits = Match_Index(T.read.T.substr(pos, T.seed), *(T.refIndex));
 
